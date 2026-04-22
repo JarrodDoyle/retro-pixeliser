@@ -1,29 +1,29 @@
 use image::{ImageError, ImageReader, RgbImage, imageops::FilterType};
-use palette::{Srgb, cast::FromComponents, color_difference::EuclideanDistance};
+use palette::{IntoColor, Oklab, Srgb, cast::FromComponents, color_difference::EuclideanDistance};
 
 const PALETTE_PATH: &str = "./res/palette.png";
 const INPUT_PATH: &str = "./res/input.png";
 const OUTPUT_PATH: &str = "./res/output.png";
 const DOWNSCALE: u32 = 4;
 
-fn palette_from_image(image: &RgbImage) -> Vec<Srgb> {
-    let mut colours: Vec<Srgb> = vec![];
+fn palette_from_image(image: &RgbImage) -> Vec<Oklab> {
+    let mut colours: Vec<Oklab> = vec![];
     for pixel in <&[Srgb<u8>]>::from_components(&**image) {
-        colours.push(pixel.into_format());
+        colours.push(pixel.into_linear().into_color());
     }
     colours
 }
 
-fn apply_palette(image: &mut RgbImage, palette: &Vec<Srgb>) {
+fn apply_palette(image: &mut RgbImage, palette: &Vec<Oklab>) {
     for pixel in <&mut [Srgb<u8>]>::from_components(&mut **image) {
-        let pixel_srgb: Srgb = pixel.into_format();
-        let closest_colour = get_closest_palette_colour(palette, pixel_srgb);
-        *pixel = closest_colour.into_format();
+        let pixel_colour = pixel.into_linear().into_color();
+        let closest_colour = get_closest_palette_colour(palette, pixel_colour);
+        *pixel = Srgb::from_linear(closest_colour.into_color());
     }
 }
 
-fn get_closest_palette_colour(palette: &Vec<Srgb>, colour: Srgb) -> Srgb {
-    let mut closest_colour = Srgb::new(0.0, 0.0, 0.0);
+fn get_closest_palette_colour(palette: &Vec<Oklab>, colour: Oklab) -> Oklab {
+    let mut closest_colour = Oklab::new(0.0, 0.0, 0.0);
     let mut closest_distance_squared = f32::MAX;
     for palette_colour in palette {
         let distance = colour.distance_squared(*palette_colour);
