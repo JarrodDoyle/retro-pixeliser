@@ -14,6 +14,8 @@ struct Args {
     output_path: String,
     #[arg(short = 's', long, default_value_t = 4)]
     pixel_scale: u32,
+    #[arg(short, long)]
+    dither: bool,
     #[arg(short = 'e', long, default_value_t = 2)]
     dither_exponent: u32,
     #[arg(short = 't', long, default_value_t = 0.05)]
@@ -122,16 +124,21 @@ fn main() -> Result<(), ImageError> {
         FilterType::Nearest,
     );
 
-    let bayer_matrix = BayerMatrix::new(args.dither_exponent);
     let palette_image = ImageReader::open(args.palette_path)?.decode()?.into_rgb8();
     let palette_rgb = palette_from_image(&palette_image);
     let mut output_image = image.into_rgb8();
-    apply_palette_dithered(
-        &mut output_image,
-        &palette_rgb,
-        &bayer_matrix,
-        args.dither_threshold,
-    );
+
+    if args.dither {
+        let bayer_matrix = BayerMatrix::new(args.dither_exponent);
+        apply_palette_dithered(
+            &mut output_image,
+            &palette_rgb,
+            &bayer_matrix,
+            args.dither_threshold,
+        );
+    } else {
+        apply_palette(&mut output_image, &palette_rgb);
+    }
 
     output_image.save(args.output_path)?;
     Ok(())
