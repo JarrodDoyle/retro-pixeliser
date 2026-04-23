@@ -991,6 +991,7 @@ dependencies = [
  "image",
  "itertools",
  "palette",
+ "rayon",
 ]
 
 [[package]]

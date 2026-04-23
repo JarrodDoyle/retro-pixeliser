@@ -4,6 +4,7 @@ use clap::Parser;
 use image::{ImageError, ImageReader, RgbImage, imageops::FilterType};
 use itertools::Itertools;
 use palette::{IntoColor, Oklab, Srgb, cast::FromComponents, color_difference::EuclideanDistance};
+use rayon::prelude::*;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -67,11 +68,12 @@ fn palette_from_image(image: &RgbImage) -> Vec<Oklab> {
 }
 
 fn apply_palette(image: &mut RgbImage, palette: &Vec<Oklab>) {
-    for pixel in <&mut [Srgb<u8>]>::from_components(&mut **image) {
-        let pixel_colour = pixel.into_linear().into_color();
+    image.par_pixels_mut().for_each(|pixel| {
+        let pixel_colour: Oklab = Srgb::from(pixel.0).into_linear().into_color();
         let closest_colour = get_closest_palette_colour(palette, pixel_colour);
-        *pixel = Srgb::from_linear(closest_colour.into_color());
-    }
+        let srgb_colour = Srgb::from_linear(closest_colour.into_color());
+        *pixel = image::Rgb([srgb_colour.red, srgb_colour.green, srgb_colour.blue]);
+    });
 }
 
 // Pattern dithering: https://bisqwit.iki.fi/story/howto/dither/jy/#PatternDitheringThePatentedAlgorithmUsedInAdobePhotoshop
@@ -81,7 +83,7 @@ fn apply_palette_dithered(
     bayer_matrix: &BayerMatrix,
     threshold: f32,
 ) {
-    for (x, y, pixel) in image.enumerate_pixels_mut() {
+    image.par_enumerate_pixels_mut().for_each(|(x, y, pixel)| {
         let pixel_colour: Oklab = Srgb::from(pixel.0).into_linear().into_color();
 
         let mut candidates: Vec<Oklab> = vec![];
@@ -99,7 +101,7 @@ fn apply_palette_dithered(
         let index = bayer_matrix.index(x, y) as usize;
         let srgb_colour = Srgb::from_linear(candidates[index].into_color());
         *pixel = image::Rgb([srgb_colour.red, srgb_colour.green, srgb_colour.blue]);
-    }
+    });
 }
 
 fn get_closest_palette_colour(palette: &Vec<Oklab>, colour: Oklab) -> Oklab {
