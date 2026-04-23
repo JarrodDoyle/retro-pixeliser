@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, fs, path::PathBuf};
 
 use clap::Parser;
-use image::{ImageError, ImageReader, RgbImage, imageops::FilterType};
+use image::{ImageError, ImageFormat, ImageReader, RgbImage, imageops::FilterType};
 use itertools::Itertools;
 use palette::{IntoColor, Oklab, Srgb, cast::FromComponents, color_difference::EuclideanDistance};
 use rayon::prelude::*;
@@ -133,7 +133,7 @@ fn main() -> Result<(), ImageError> {
         let input_paths = fs::read_dir(&args.input_path)?
             .filter_map(|e| e.ok())
             .filter_map(|e| match e.path().extension() {
-                Some(ext) if ext == "png" => Some(e.path()),
+                Some(ext) if ImageFormat::from_extension(ext).is_some() => Some(e.path()),
                 _ => None,
             });
         for input_path in input_paths {
