@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::PathBuf};
+use std::{ffi::OsStr, fs, path::PathBuf};
 
 use clap::Parser;
 use image::{ImageError, ImageReader, RgbImage, imageops::FilterType};
@@ -23,6 +23,8 @@ struct Args {
     dither_exponent: u32,
     #[arg(short = 't', long, default_value_t = 0.05)]
     dither_threshold: f32,
+    #[arg(short, long)]
+    batch: bool,
 }
 
 // Modified slightly from https://nelari.us/post/quick_and_dirty_dithering/#bayer-matrix
@@ -120,42 +122,69 @@ fn get_closest_palette_colour(palette: &Vec<Oklab>, colour: Oklab) -> Oklab {
 fn main() -> Result<(), ImageError> {
     let args = Args::parse();
 
-    let image = ImageReader::open(&args.input_path)?.decode()?;
-    let image = image.resize(
-        image.width() / args.pixel_scale,
-        image.height() / args.pixel_scale,
-        FilterType::Nearest,
-    );
+    let mut paths = vec![];
+    if args.batch {
+        // TODO: Handle input and output not being dirs!
+        let output_dir = match args.output_path {
+            Some(path) if path.is_dir() => path,
+            _ => args.input_path.join("output"),
+        };
+
+        let input_paths = fs::read_dir(&args.input_path)?
+            .filter_map(|e| e.ok())
+            .filter_map(|e| match e.path().extension() {
+                Some(ext) if ext == "png" => Some(e.path()),
+                _ => None,
+            });
+        for input_path in input_paths {
+            let output_path = output_dir.join(input_path.file_name().unwrap_or_default());
+            paths.push((input_path, output_path));
+        }
+
+        if !output_dir.exists() {
+            fs::create_dir(output_dir)?;
+        }
+    } else {
+        let output_path = match args.output_path {
+            Some(path) => path,
+            None => {
+                let mut file_name = args.input_path.file_prefix().unwrap_or_default().to_owned();
+                file_name.push(OsStr::new("_output"));
+                let mut path = args.input_path.with_file_name(file_name);
+                if let Some(ext) = args.input_path.extension() {
+                    path.set_extension(ext);
+                }
+                path
+            }
+        };
+        paths.push((args.input_path, output_path));
+    }
 
     let palette_image = ImageReader::open(args.palette_path)?.decode()?.into_rgb8();
     let palette_rgb = palette_from_image(&palette_image);
-    let mut output_image = image.into_rgb8();
-
-    if args.dither {
-        let bayer_matrix = BayerMatrix::new(args.dither_exponent);
-        apply_palette_dithered(
-            &mut output_image,
-            &palette_rgb,
-            &bayer_matrix,
-            args.dither_threshold,
+    for (input_path, output_path) in paths {
+        let image = ImageReader::open(input_path)?.decode()?;
+        let image = image.resize(
+            image.width() / args.pixel_scale,
+            image.height() / args.pixel_scale,
+            FilterType::Nearest,
         );
-    } else {
-        apply_palette(&mut output_image, &palette_rgb);
+        let mut output_image = image.into_rgb8();
+
+        if args.dither {
+            let bayer_matrix = BayerMatrix::new(args.dither_exponent);
+            apply_palette_dithered(
+                &mut output_image,
+                &palette_rgb,
+                &bayer_matrix,
+                args.dither_threshold,
+            );
+        } else {
+            apply_palette(&mut output_image, &palette_rgb);
+        }
+
+        output_image.save(output_path)?;
     }
 
-    let output_path = match args.output_path {
-        Some(path) => path,
-        None => {
-            let mut file_name = args.input_path.file_prefix().unwrap_or_default().to_owned();
-            file_name.push(OsStr::new("_output"));
-            let mut path = args.input_path.with_file_name(file_name);
-            if let Some(ext) = args.input_path.extension() {
-                path.set_extension(ext);
-            }
-            path
-        }
-    };
-
-    output_image.save(output_path)?;
     Ok(())
 }
