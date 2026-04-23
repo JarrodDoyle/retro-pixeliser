@@ -69,44 +69,34 @@ fn palette_from_image(image: &RgbImage) -> Vec<Oklab> {
     colours
 }
 
-fn apply_palette(image: &mut RgbImage, palette: &Vec<Oklab>) {
-    image.par_pixels_mut().for_each(|pixel| {
-        let pixel_colour: Oklab = Srgb::from(pixel.0).into_linear().into_color();
-        let closest_colour = get_closest_palette_colour(palette, pixel_colour);
-        let srgb_colour = Srgb::from_linear(closest_colour.into_color());
-        *pixel = image::Rgb([srgb_colour.red, srgb_colour.green, srgb_colour.blue]);
-    });
+fn apply_palette(pixel_colour: &mut Oklab, palette: &Vec<Oklab>) {
+    *pixel_colour = get_closest_palette_colour(palette, pixel_colour);
 }
 
 // Pattern dithering: https://bisqwit.iki.fi/story/howto/dither/jy/#PatternDitheringThePatentedAlgorithmUsedInAdobePhotoshop
 fn apply_palette_dithered(
-    image: &mut RgbImage,
+    x: u32,
+    y: u32,
+    pixel_colour: &mut Oklab,
     palette: &Vec<Oklab>,
     bayer_matrix: &BayerMatrix,
     threshold: f32,
 ) {
-    image.par_enumerate_pixels_mut().for_each(|(x, y, pixel)| {
-        let pixel_colour: Oklab = Srgb::from(pixel.0).into_linear().into_color();
+    let mut candidates: Vec<Oklab> = vec![];
+    let mut error = Oklab::new(0.0, 0.0, 0.0);
+    let matrix_element_count = bayer_matrix.size.pow(2);
+    for _ in 0..matrix_element_count {
+        let sample = *pixel_colour + error * threshold;
+        let candidate = get_closest_palette_colour(palette, &sample);
+        candidates.push(candidate);
+        error += *pixel_colour - candidate;
+    }
 
-        let mut candidates: Vec<Oklab> = vec![];
-        let mut error = Oklab::new(0.0, 0.0, 0.0);
-        let matrix_element_count = bayer_matrix.size.pow(2);
-        for _ in 0..matrix_element_count {
-            let sample = pixel_colour + error * threshold;
-            let candidate = get_closest_palette_colour(palette, sample);
-            candidates.push(candidate);
-            error += pixel_colour - candidate;
-        }
-
-        candidates.sort_by(|Oklab { l: l1, .. }, Oklab { l: l2, .. }| l1.partial_cmp(l2).unwrap());
-
-        let index = bayer_matrix.index(x, y) as usize;
-        let srgb_colour = Srgb::from_linear(candidates[index].into_color());
-        *pixel = image::Rgb([srgb_colour.red, srgb_colour.green, srgb_colour.blue]);
-    });
+    candidates.sort_by(|Oklab { l: l1, .. }, Oklab { l: l2, .. }| l1.partial_cmp(l2).unwrap());
+    *pixel_colour = candidates[bayer_matrix.index(x, y) as usize];
 }
 
-fn get_closest_palette_colour(palette: &Vec<Oklab>, colour: Oklab) -> Oklab {
+fn get_closest_palette_colour(palette: &Vec<Oklab>, colour: &Oklab) -> Oklab {
     let mut closest_colour = Oklab::new(0.0, 0.0, 0.0);
     let mut closest_distance_squared = f32::MAX;
     for palette_colour in palette {
@@ -161,7 +151,8 @@ fn main() -> Result<(), ImageError> {
     }
 
     let palette_image = ImageReader::open(args.palette_path)?.decode()?.into_rgb8();
-    let palette_rgb = palette_from_image(&palette_image);
+    let palette = palette_from_image(&palette_image);
+    let bayer_matrix = BayerMatrix::new(args.dither_exponent);
     for (input_path, output_path) in paths {
         let image = ImageReader::open(input_path)?.decode()?;
         let image = image.resize(
@@ -171,17 +162,27 @@ fn main() -> Result<(), ImageError> {
         );
         let mut output_image = image.into_rgb8();
 
-        if args.dither {
-            let bayer_matrix = BayerMatrix::new(args.dither_exponent);
-            apply_palette_dithered(
-                &mut output_image,
-                &palette_rgb,
-                &bayer_matrix,
-                args.dither_threshold,
-            );
-        } else {
-            apply_palette(&mut output_image, &palette_rgb);
-        }
+        output_image
+            .par_enumerate_pixels_mut()
+            .for_each(|(x, y, pixel)| {
+                let mut pixel_colour: Oklab = Srgb::from(pixel.0).into_linear().into_color();
+
+                if args.dither {
+                    apply_palette_dithered(
+                        x,
+                        y,
+                        &mut pixel_colour,
+                        &palette,
+                        &bayer_matrix,
+                        args.dither_threshold,
+                    );
+                } else {
+                    apply_palette(&mut pixel_colour, &palette);
+                }
+
+                let srgb_colour = Srgb::from_linear(pixel_colour.into_color());
+                *pixel = image::Rgb([srgb_colour.red, srgb_colour.green, srgb_colour.blue]);
+            });
 
         output_image.save(output_path)?;
     }
