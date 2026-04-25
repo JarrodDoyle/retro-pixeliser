@@ -4,9 +4,8 @@ use clap::Parser;
 use image::{ImageError, ImageFormat, ImageReader, RgbImage, imageops::FilterType};
 use itertools::Itertools;
 use palette::{
-    DarkenAssign, IntoColor, IntoColorMut, LightenAssign, LinSrgb, Okhsl, Oklab, Oklch,
-    SaturateAssign, ShiftHueAssign, Srgb, cast::FromComponents,
-    color_difference::EuclideanDistance,
+    IntoColor, IntoColorMut, LightenAssign, LinSrgb, Okhsl, Oklab, Oklch, SaturateAssign,
+    ShiftHueAssign, Srgb, cast::FromComponents, color_difference::EuclideanDistance,
 };
 use rayon::prelude::*;
 
@@ -91,11 +90,7 @@ fn apply_contrast(colour: &mut LinSrgb, contrast: i32) {
 fn apply_brightness(colour: &mut LinSrgb, brightness: i32) {
     let brightness = brightness.clamp(-100, 100) as f32 / 100.0;
     let colour_oklab: &mut Oklab = &mut colour.into_color_mut();
-    if brightness.signum() > 0.0 {
-        colour_oklab.lighten_assign(brightness);
-    } else {
-        colour_oklab.darken_assign(brightness);
-    }
+    colour_oklab.lighten_assign(brightness);
 }
 
 fn apply_hue(colour: &mut LinSrgb, hue: i32) {
