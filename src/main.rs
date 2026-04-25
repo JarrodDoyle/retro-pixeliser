@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fs, path::PathBuf};
 
-use clap::Parser;
+use clap::{Parser, value_parser};
 use image::{ImageError, ImageFormat, ImageReader, RgbImage, imageops::FilterType};
 use itertools::Itertools;
 use palette::{
@@ -29,13 +29,17 @@ struct Args {
     #[arg(short, long)]
     batch: bool,
 
-    #[arg(long)]
+    /// Shift hue [range: 0..=360]
+    #[arg(long, value_parser = value_parser!(i32).range(0..=360))]
     hue: Option<i32>,
-    #[arg(long, allow_hyphen_values = true)]
+    /// Adjust saturation [range: -100..=100]
+    #[arg(long, allow_hyphen_values = true, value_parser = value_parser!(i32).range(-100..=100))]
     saturation: Option<i32>,
-    #[arg(long, allow_hyphen_values = true)]
+    /// Adjust brightness [range: -100..=100]
+    #[arg(long, allow_hyphen_values = true, value_parser = value_parser!(i32).range(-100..=100))]
     brightness: Option<i32>,
-    #[arg(long, allow_hyphen_values = true)]
+    /// Adjust contrast [range: -100..=100]
+    #[arg(long, allow_hyphen_values = true, value_parser = value_parser!(i32).range(-100..=100))]
     contrast: Option<i32>,
 }
 
@@ -94,6 +98,7 @@ fn apply_brightness(colour: &mut LinSrgb, brightness: i32) {
 }
 
 fn apply_hue(colour: &mut LinSrgb, hue: i32) {
+    let hue = hue.clamp(0, 360);
     let colour_oklch: &mut Oklch = &mut colour.into_color_mut();
     colour_oklch.shift_hue_assign(hue as f32);
 }
