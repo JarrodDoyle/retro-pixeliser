@@ -2,14 +2,9 @@ use std::{ffi::OsStr, fs, path::PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, value_parser};
-use image::{ImageFormat, ImageReader, imageops::FilterType};
-use palette::Srgb;
-use rayon::prelude::*;
+use image::{ImageFormat, ImageReader};
 
-use crate::image::{
-    BayerMatrix, apply_brightness, apply_contrast, apply_hue, apply_palette,
-    apply_palette_dithered, apply_saturation, palette_from_image,
-};
+use crate::image::{ImageSettings, apply_effects, load_image, palette_from_image};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -88,53 +83,20 @@ pub fn run() -> Result<()> {
 
     let palette_image = ImageReader::open(args.palette_path)?.decode()?.into_rgb8();
     let palette = palette_from_image(&palette_image);
-    let bayer_matrix = BayerMatrix::new(args.dither_exponent);
+    let settings = ImageSettings {
+        scale: args.pixel_scale,
+        hue: args.hue.unwrap_or_default(),
+        saturation: args.saturation.unwrap_or_default(),
+        brightness: args.brightness.unwrap_or_default(),
+        contrast: args.contrast.unwrap_or_default(),
+        dither: args.dither,
+        dither_exponent: args.dither_exponent,
+        dither_threshold: args.dither_threshold,
+    };
+
     for (input_path, output_path) in paths {
-        let image = ImageReader::open(input_path)?.decode()?;
-        let image = image.resize(
-            image.width() / args.pixel_scale,
-            image.height() / args.pixel_scale,
-            FilterType::Nearest,
-        );
-
-        let mut output_image = image.into_rgb8();
-        output_image
-            .par_enumerate_pixels_mut()
-            .for_each(|(x, y, pixel)| {
-                let mut colour_linear = Srgb::from(pixel.0).into_linear::<f32>();
-
-                if let Some(contrast) = args.contrast {
-                    apply_contrast(&mut colour_linear, contrast);
-                }
-
-                if let Some(brightness) = args.brightness {
-                    apply_brightness(&mut colour_linear, brightness);
-                }
-
-                if let Some(hue) = args.hue {
-                    apply_hue(&mut colour_linear, hue);
-                }
-
-                if let Some(saturation) = args.saturation {
-                    apply_saturation(&mut colour_linear, saturation);
-                }
-
-                if args.dither {
-                    apply_palette_dithered(
-                        x,
-                        y,
-                        &mut colour_linear,
-                        &palette,
-                        &bayer_matrix,
-                        args.dither_threshold,
-                    );
-                } else {
-                    apply_palette(&mut colour_linear, &palette);
-                }
-
-                *pixel = image::Rgb(Srgb::from_linear(colour_linear).into());
-            });
-
+        let image = load_image(&input_path)?;
+        let output_image = apply_effects(&image, &palette, &settings);
         output_image.save(output_path)?;
     }
 

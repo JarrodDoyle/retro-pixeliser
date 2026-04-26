@@ -1,15 +1,11 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Result;
 use eframe::egui::{self, ImageData, TextureOptions};
-use image::{DynamicImage, EncodableLayout, ImageReader, RgbImage, imageops::FilterType};
-use palette::{LinSrgb, Srgb};
-use rayon::prelude::*;
+use image::{EncodableLayout, RgbImage};
+use palette::LinSrgb;
 
-use crate::image::{
-    BayerMatrix, apply_brightness, apply_contrast, apply_hue, apply_palette,
-    apply_palette_dithered, apply_saturation, palette_from_image,
-};
+use crate::image::{ImageSettings, apply_effects, load_image, palette_from_image};
 
 #[derive(Default)]
 struct GuiApp {
@@ -116,59 +112,6 @@ impl eframe::App for GuiApp {
             }
         });
     }
-}
-
-fn load_image(path: &Path) -> Result<RgbImage> {
-    match ImageReader::open(path)?.decode()? {
-        DynamicImage::ImageRgb8(image) => Ok(image),
-        other => Ok(other.to_rgb8()),
-    }
-}
-
-fn apply_effects(original: &RgbImage, palette: &[LinSrgb], settings: &ImageSettings) -> RgbImage {
-    let bayer_matrix = BayerMatrix::new(settings.dither_exponent);
-
-    let mut output_image = DynamicImage::ImageRgb8(original.clone())
-        .resize(
-            original.width() / settings.scale,
-            original.height() / settings.scale,
-            FilterType::Nearest,
-        )
-        .into_rgb8();
-
-    output_image
-        .par_enumerate_pixels_mut()
-        .for_each(|(x, y, pixel)| {
-            let mut colour_linear = Srgb::from(pixel.0).into_linear::<f32>();
-
-            apply_contrast(&mut colour_linear, settings.contrast);
-            apply_brightness(&mut colour_linear, settings.brightness);
-            apply_hue(&mut colour_linear, settings.hue);
-            apply_saturation(&mut colour_linear, settings.saturation);
-
-            if settings.dither {
-                let threshold = settings.dither_threshold;
-                apply_palette_dithered(x, y, &mut colour_linear, palette, &bayer_matrix, threshold);
-            } else {
-                apply_palette(&mut colour_linear, palette);
-            }
-
-            *pixel = image::Rgb(Srgb::from_linear(colour_linear).into());
-        });
-
-    output_image
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-struct ImageSettings {
-    scale: u32,
-    hue: i32,
-    saturation: i32,
-    brightness: i32,
-    contrast: i32,
-    dither: bool,
-    dither_exponent: u32,
-    dither_threshold: f32,
 }
 
 pub fn run() -> Result<()> {
