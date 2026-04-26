@@ -1,7 +1,8 @@
 use std::{ffi::OsStr, fs, path::PathBuf};
 
+use anyhow::Result;
 use clap::{Parser, value_parser};
-use image::{ImageError, ImageFormat, ImageReader, imageops::FilterType};
+use image::{ImageFormat, ImageReader, imageops::FilterType};
 use palette::Srgb;
 use rayon::prelude::*;
 
@@ -44,8 +45,7 @@ struct Args {
     contrast: Option<i32>,
 }
 
-// TODO: Better result error type
-pub fn run() -> Result<(), ImageError> {
+pub fn run() -> Result<()> {
     let args = Args::parse();
 
     let mut paths = vec![];

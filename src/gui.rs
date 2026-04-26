@@ -171,7 +171,7 @@ struct ImageSettings {
     dither_threshold: f32,
 }
 
-pub fn run() -> eframe::Result {
+pub fn run() -> Result<()> {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
@@ -180,5 +180,7 @@ pub fn run() -> eframe::Result {
         "RetroPixel",
         options,
         Box::new(|_cc| Ok(Box::<GuiApp>::default())),
-    )
+    )?;
+
+    Ok(())
 }
