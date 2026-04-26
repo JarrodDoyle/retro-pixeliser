@@ -8,10 +8,8 @@ mod image;
 
 fn main() -> Result<()> {
     if env::args().count() > 1 {
-        cli::run()?;
+        cli::run()
     } else {
-        gui::run()?;
+        gui::run()
     }
-
-    Ok(())
 }
